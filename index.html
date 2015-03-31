@@ -1,0 +1,255 @@
+<!doctype html>
+<html>
+	<head>
+		<title>bahamas10's Chef Standalone Builds</title>
+		<style>
+			/* http://tablestyler.com/# */
+			.datagrid table { border-collapse: collapse; text-align: left; width: 100%; } .datagrid {font: normal 12px/150% Arial, Helvetica, sans-serif; background: #fff; overflow: hidden; border: 2px solid #8C8C8C; -webkit-border-radius: 7px; -moz-border-radius: 7px; border-radius: 7px; }.datagrid table td, .datagrid table th { padding: 11px 8px; }.datagrid table thead th {background:-webkit-gradient( linear, left top, left bottom, color-stop(0.05, #8C8C8C), color-stop(1, #7D7D7D) );background:-moz-linear-gradient( center top, #8C8C8C 5%, #7D7D7D 100% );filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#8C8C8C', endColorstr='#7D7D7D');background-color:#8C8C8C; color:#FFFFFF; font-size: 13px; font-weight: bold; border-left: 1px solid #A3A3A3; } .datagrid table thead th:first-child { border: none; }.datagrid table tbody td { color: #7D7D7D; border-left: 3px solid #DBDBDB;font-size: 12px;font-weight: normal; }.datagrid table tbody .alt td { background: #EBEBEB; color: #7D7D7D; }.datagrid table tbody td:first-child { border-left: none; }.datagrid table tbody tr:last-child td { border-bottom: none; }.datagrid table tfoot td div { border-top: 1px solid #8C8C8C;background: #EBEBEB;} .datagrid table tfoot td { padding: 0; font-size: 12px } .datagrid table tfoot td div{ padding: 2px; }.datagrid table tfoot td ul { margin: 0; padding:0; list-style: none; text-align: right; }.datagrid table tfoot  li { display: inline; }.datagrid table tfoot li a { text-decoration: none; display: inline-block;  padding: 2px 8px; margin: 1px;color: #F5F5F5;border: 1px solid #8C8C8C;-webkit-border-radius: 3px; -moz-border-radius: 3px; border-radius: 3px; background:-webkit-gradient( linear, left top, left bottom, color-stop(0.05, #8C8C8C), color-stop(1, #7D7D7D) );background:-moz-linear-gradient( center top, #8C8C8C 5%, #7D7D7D 100% );filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#8C8C8C', endColorstr='#7D7D7D');background-color:#8C8C8C; }.datagrid table tfoot ul.active, .datagrid table tfoot ul a:hover { text-decoration: none;border-color: #7D7D7D; color: #F5F5F5; background: none; background-color:#8C8C8C;}div.dhtmlx_window_active, div.dhx_modal_cover_dv { position: fixed !important; }
+
+			.datagrid {
+				padding: 5px;
+				margin-right: auto;
+				margin-left: auto;
+				width: 1000px;
+			}
+		</style>
+		<script>
+			/*
+			* Convert to hex
+			*/
+			function a2hex(input) {
+				var hex = '0123456789abcdef';
+				var output = '';
+				for (var i = 0; i < input.length; i += 1) {
+					var x = input.charCodeAt(i);
+					output += hex.charAt((x >>> 4) & 0x0F) + hex.charAt(x & 0x0F);
+				}
+				return output;
+			}
+
+			/**
+			* Print a human readable timestamp to the terminal
+			* given a number representing seconds
+			*
+			* taken from https://github.com/bahamas10/human
+			*
+			* Author: Dave Eddy <dave@daveeddy.com>
+			* Date: 8/18/2014
+			* License: MIT
+			*/
+			function human(seconds) {
+				if (seconds instanceof Date)
+					seconds = Math.round((Date.now() - seconds) / 1000);
+				var suffix = seconds < 0 ? 'from now' : 'ago';
+				seconds = Math.abs(seconds);
+
+				var times = [
+				seconds / 60 / 60 / 24 / 365, // years
+				seconds / 60 / 60 / 24 / 30,  // months
+				seconds / 60 / 60 / 24,       // days
+				seconds / 60 / 60,            // hours
+				seconds / 60,                 // minutes
+				seconds                       // seconds
+				];
+				var names = ['year', 'month', 'day', 'hour', 'minute', 'second'];
+
+				for (var i = 0; i < names.length; i++) {
+					var time = Math.floor(times[i]);
+					if (time > 1)
+						return time + ' ' + names[i] + 's ' + suffix;
+					else if (time === 1)
+						return time + ' ' + names[i] + ' ' + suffix;
+				}
+				return '0 seconds ' + suffix;
+			}
+
+			/**
+			* simple function to make a request and get the text back
+			*
+			* ex:
+			* request('/foobar.txt', function(err, text, xhr) {
+			*   console.log(text);
+			* });
+			*/
+			function request(uri, method, data, headers, cb) {
+				if (typeof method === 'function') {
+					cb = method;
+					method = undefined;
+				}
+
+				if (typeof data === 'function') {
+					cb = data;
+					data = undefined;
+				}
+
+				if (typeof headers === 'function') {
+					cb = headers;
+					headers = undefined;
+				}
+
+				method = method || 'GET';
+				headers = headers || {};
+
+				var xhr = new XMLHttpRequest();
+				xhr.onreadystatechange = function() {
+					var e;
+
+					if (xhr.readyState !== 4)
+						return;
+
+					if (xhr.status !== 200) {
+						e = new Error('request failed');
+						e.xhr = xhr;
+						cb(e);
+						return;
+					}
+
+					cb(null, xhr.responseText, xhr);
+				};
+
+				xhr.open(method, uri, true);
+				Object.keys(headers).forEach(function(header) {
+					xhr.setRequestHeader(header, headers[header]);
+				});
+				xhr.send(data);
+
+				return xhr;
+			}
+
+			/**
+			 * sort semver
+			 */
+			function semversort(a, b) {
+				var sa = a.split('.');
+				var sb = b.split('.');
+				for (var i = 0; i < 2; i++) {
+					if (sa[i] < sb[i])
+						return -1;
+					if (sa[i] > sb[i])
+						return 1;
+				}
+				return 0;
+			}
+
+			window.addEventListener('load', init);
+			var files = [];
+			var table;
+			function init() {
+				table = document.getElementById('table');
+				request('./', function(err, text) {
+					text.trim().split('\n').forEach(function(o) {
+						o = JSON.parse(o);
+						if (o.type === 'object' && /\.tar\.gz$/.test(o.name))
+							files.push(o);
+					});
+					// sort files array
+					files.sort(function(a, b) {
+						var sa = a.name.match(/chef-(\d+\.\d+\.\d+)-/)[1];
+						var sb = b.name.match(/chef-(\d+\.\d+\.\d+)-/)[1];
+						return semversort(sa, sb);
+					}).reverse();
+
+					// load up the HTML
+					maketable();
+
+					// get the md5s
+					getmd5s();
+				});
+			}
+
+			function maketable() {
+				files.forEach(function(file) {
+					var tr = document.createElement('tr');
+					tr.className = 'entry';
+					var td;
+
+					// name
+					td = document.createElement('td');
+					var a = document.createElement('a');
+					a.href = file.name;
+					a.textContent = file.name;
+					td.appendChild(a);
+					tr.appendChild(td);
+
+					// size
+					td = document.createElement('td');
+					td.textContent = file.size.toLocaleString('en');
+					tr.appendChild(td);
+
+					// mtime
+					td = document.createElement('td');
+					td.textContent = file.mtime + ' (' + human(new Date(file.mtime)) + ')';
+					tr.appendChild(td);
+
+					// md5
+					td = document.createElement('td');
+					td.style.fontFamily = 'monospace';
+					td.textContent = '...';
+					tr.appendChild(td);
+
+					table.appendChild(tr);
+				});
+			}
+
+			function getmd5s() {
+				var todo = 0;
+				files.forEach(function(file) {
+					todo++;
+					request('./' + file.name, 'HEAD', function(err, text, xhr) {
+						var md5 = a2hex(xhr.getResponseHeader('content-md5'));
+						// find the table entry and update it
+						var elements = table.getElementsByClassName('entry');
+						for (var i = 0; i < elements.length; i++)
+							if (elements[i].getElementsByTagName('td')[0].textContent === file.name)
+								elements[i].getElementsByTagName('td')[3].textContent = md5;
+					});
+				});
+			}
+
+			function done() {
+			}
+		</script>
+	</head>
+	<body>
+		<div class="datagrid">
+			<h1>bahamas10's Chef Standalone Builds</h1>
+			<p>
+			Tarballs that contain a standalone installation of Ruby and Chef in <code>/opt/chef</code> for easy
+			installation on the <a href="http://smartos.org">SmartOS</a> operating system.  Because Chef currently doesn't build
+			<a href="https://github.com/chef/omnibus-chef/issues/249">omnibus on SmartOS</a>, this is the next best thing.
+			</p>
+			<p>
+			<h2>Process</h2>
+			The script <a href="http://github.com/bahamas10/chef-standalone">http://github.com/bahamas10/chef-standalone</a>
+			is used to compile Ruby and build Chef to <code>/opt/chef</code>, as well as apply
+			a patch to <code>ffi</code> to fix the Chef build process on SmartOS.  The resultant tarballs are then uploaded
+			here to manta, and the index page is generated dynamically with HTML and client-side JavaScript only.
+			</p>
+			<p>
+			<ul>
+				<li>x86 - built on <code>base-32-lts (b1b72a76-c1bc-11e4-849e-3bc862098cfd)</code></li>
+				<li>x64 - built on <code>base-64-lts (c02a2044-c1bd-11e4-bd8c-dfc1db8b0182)</code></li>
+			</ul>
+			</p>
+			<p>
+			<h2>Installation Steps</h2>
+			Just untar one of these tarballs over <code>/</code> to install chef to <code>/opt/chef</code>
+
+			<pre><code>cd / && curl <script>document.write(location.href.replace(/\/[^/]+$/, ''))</script>/tarball.tar.gz | gzcat | tar -xf -
+			</pre></code>
+			<table>
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Size (bytes)</th>
+						<th>Modification Time</th>
+						<th>Checksum (md5)</th>
+					</tr>
+				</thead>
+				<tbody id="table">
+				</tbody>
+			</table>
+		</div>
+		<a href="https://github.com/bahamas10/chef-standalone"><img style="position: absolute; top: 0; right: 0; border: 0;" src="https://camo.githubusercontent.com/38ef81f8aca64bb9a64448d0d70f1308ef5341ab/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6461726b626c75655f3132313632312e706e67" alt="Fork me on GitHub" data-canonical-src="https://s3.amazonaws.com/github/ribbons/forkme_right_darkblue_121621.png"></a>
+	</body>
+</html>

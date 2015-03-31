@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+#
+# build a standalone chef installation on SmartOS -
+# useful while omnibus is broken for this OS
+#
+# Author: Dave Eddy <dave@daveeddy.com>
+# Date: March 30, 2015
+# License: MIT
+
+usage() {
+	local prog=${0##*/}
+	cat <<-EOF
+	usage: $prog [-v chef_version] [-r ruby_url] [-d cache_dir] [-h] <tarball_name.tar.gz>
+
+	build a standalone chef tarball on SmartOS
+
+	options
+	  -c <chef_dir>         the dir to use for install chef, defaults to $chef_dir
+	  -d <cache_dir>        the dir to use for caching ruby tarballs, defaults to $cache_dir
+	  -h                    print this message and exit
+	  -j <jobs>             number of jobs, will be passed as make -j <jobs>, defaults to $jobs
+	  -r <ruby_url>         the url of the ruby tarball to use, defaults to $ruby_url
+	  -v <chef_versio>      the chef version to install, defaults to $chef_version
+	EOF
+}
+
+cache_dir=~/.standalone-chef
+ruby_url='http://cache.ruby-lang.org/pub/ruby/2.2/ruby-2.2.1.tar.gz'
+chef_version='12.2.1'
+chef_dir='/opt/chef'
+jobs=4
+while getopts 'c:d:hj:r:v:' option; do
+	case "$option" in
+		c) chef_dir=$OPTARG;;
+		d) cache_dir=$OPTARG;;
+		h) usage; exit 0;;
+		h) jobs=$OPTARG;;
+		r) ruby_url=$OPTARG;;
+		v) chef_version=$OPTARG;;
+		*) usage >&2; exit 1;;
+	esac
+done
+shift "$((OPTIND - 1))"
+tarball=$1
+
+# bail if the user didn't supply a tarball name
+if [[ -z $tarball ]]; then
+	echo 'tarball name must be specified as first argument' >&2
+	exit 1
+fi
+
+# make the tarball absolute
+if [[ ${tarball:0:1} != '/' ]]; then
+	tarball=$PWD/$tarball
+fi
+
+# bail if $chef_dir exists
+if [[ -d $chef_dir ]]; then
+	echo "$chef_dir exists... cowardly refusing to run" >&2
+	exit 1
+fi
+
+mkdir -p "$cache_dir"
+
+echo "cache_dir: $cache_dir"
+echo "ruby_url: $ruby_url"
+echo "chef_version: $chef_version"
+echo "chef_dir: $chef_dir"
+echo "jobs: $jobs"
+echo "tarball: $tarball"
+
+# download the ruby tarball
+ruby_file=$cache_dir/${ruby_url##*/}
+if [[ -f $ruby_file ]]; then
+	echo "$ruby_file exists... using cached version"
+else
+	echo "downloading $ruby_url to $ruby_file..."
+	curl -o "$ruby_file" "$ruby_url" || exit 1
+fi
+
+# make tmp dir to work
+tmp=$(mktemp -d /var/tmp/ruby-standalone.XXXXXXXX)
+cd "$tmp" || exit 1
+
+# install ruby
+mkdir ruby
+tar -xzf "$ruby_file" -C ruby --strip-components=1
+cd ruby || exit 1
+
+./configure \
+	"--prefix=$chef_dir" \
+	--with-opt-dir=/opt/local \
+	--enable-shared \
+	ac_cv_func_dl_iterate_phdr=no \
+	CFLAGS='-R -fPIC' \
+	rb_cv_have_signbit=no \
+	--disable-install-doc
+
+make -j "$jobs"
+mkdir "$chef_dir"
+make install || exit 1
+echo 'ruby installed'
+
+cd "$tmp" || exit 1
+
+"$chef_dir/bin/ruby" -v || exit 1 # sanity check
+
+# install chef
+"$chef_dir/bin/gem" install --no-ri --no-rdoc chef -v "$chef_version"
+# FAIL! now we fix ffi
+curl -o ffi.patch https://github.com/ffi/ffi/pull/399.diff || exit 1
+"$chef_dir/bin/gem" install gem-patch
+"$chef_dir/bin/gem" patch "$chef_dir"/lib/ruby/gems/*/cache/ffi-*.gem ./ffi.patch -p 1
+
+# retry chef install, this time it should work
+"$chef_dir/bin/gem" install --no-ri --no-rdoc chef -v "$chef_version" || exit 1
+
+echo "finished! chef installed to $chef_dir"
+echo
+
+"$chef_dir/bin/ruby" -v
+"$chef_dir/bin/chef-solo" -v || exit 1 # sanity
+file "$chef_dir/bin/ruby"
+echo
+
+# tar up the result
+tar -czf "$tarball" "$chef_dir" || exit 1
+
+# remove tmp dir
+cd /tmp
+rm -rf "$tmp"
+
+echo "tarball written to $tarball"

@@ -137,6 +137,8 @@
 			function init() {
 				table = document.getElementById('table');
 				request('./', function(err, text) {
+					if (err)
+						return alert(err.message);
 					text.trim().split('\n').forEach(function(o) {
 						o = JSON.parse(o);
 						if (o.type === 'object' && /\.tar\.gz$/.test(o.name))
@@ -158,6 +160,7 @@
 			}
 
 			function maketable() {
+				table.innerHTML = '';
 				files.forEach(function(file) {
 					var tr = document.createElement('tr');
 					tr.className = 'entry';
@@ -196,7 +199,12 @@
 				files.forEach(function(file) {
 					todo++;
 					request('./' + file.name, 'HEAD', function(err, text, xhr) {
-						var md5 = a2hex(xhr.getResponseHeader('content-md5'));
+						var md5;
+						try {
+							md5 = a2hex(xhr.getResponseHeader('content-md5'));
+						} catch(e) {
+							md5 = e.message;
+						}
 						// find the table entry and update it
 						var elements = table.getElementsByClassName('entry');
 						for (var i = 0; i < elements.length; i++)
@@ -204,9 +212,6 @@
 								elements[i].getElementsByTagName('td')[3].textContent = md5;
 					});
 				});
-			}
-
-			function done() {
 			}
 		</script>
 	</head>
@@ -247,6 +252,7 @@
 					</tr>
 				</thead>
 				<tbody id="table">
+					<tr><td>Loading...</td></tr>
 				</tbody>
 			</table>
 		</div>

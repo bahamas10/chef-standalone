@@ -12,6 +12,12 @@
 				margin-left: auto;
 				width: 1000px;
 			}
+			pre {
+				border: 1px solid #555;
+				border-radius: 5px;
+				padding:  5px;
+				background-color: #ddd;
+			}
 		</style>
 		<script>
 			/*
@@ -141,7 +147,7 @@
 						return alert(err.message);
 					text.trim().split('\n').forEach(function(o) {
 						o = JSON.parse(o);
-						if (o.type === 'object' && /\.tar\.gz$/.test(o.name))
+						if (o.type === 'object' && /\.tar\.gz$/.test(o.name) && ! /-latest-/.test(o.name))
 							files.push(o);
 					});
 					// sort files array
@@ -235,13 +241,21 @@
 				<li>x86 - built on <code>base-32-lts (b1b72a76-c1bc-11e4-849e-3bc862098cfd)</code></li>
 				<li>x64 - built on <code>base-64-lts (c02a2044-c1bd-11e4-bd8c-dfc1db8b0182)</code></li>
 			</ul>
+			<p>
+			The following command is run before building the tarballs to install dependencies
+			<pre><code>pkgin in gmake gcc47</code></pre>
 			</p>
 			<p>
 			<h2>Installation Steps</h2>
-			Just untar one of these tarballs over <code>/</code> to install chef to <code>/opt/chef</code>
+			Just untar one of these tarballs over <code>/</code> to install chef to <code>/opt/chef</code>, note that <code>smartos-latest-(x86|x64).tar.gz</code> will always point to the latest release of chef built.
 
-			<pre><code>cd / && curl <script>document.write(location.href.replace(/\/[^/]+$/, ''))</script>/tarball.tar.gz | gzcat | tar -xf -
-			</pre></code>
+			<pre><code>cd / && curl <script>document.write(location.href.replace(/\/[^/]+$/, ''))</script>/smartos-latest-x64.tar.gz | gzcat | tar -xf -</code></pre>
+
+			You can verify the install process worked with
+
+		<pre><code>$ /opt/chef/bin/chef-solo -v
+Chef: 12.2.1
+</code></pre>
 			<table>
 				<thead>
 					<tr>

@@ -34,7 +34,7 @@ while getopts 'c:d:hj:r:v:' option; do
 		c) chef_dir=$OPTARG;;
 		d) cache_dir=$OPTARG;;
 		h) usage; exit 0;;
-		h) jobs=$OPTARG;;
+		j) jobs=$OPTARG;;
 		r) ruby_url=$OPTARG;;
 		v) chef_version=$OPTARG;;
 		*) usage >&2; exit 1;;

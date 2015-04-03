@@ -4,6 +4,7 @@
 # useful while omnibus is broken for this OS
 #
 # Author: Dave Eddy <dave@daveeddy.com>
+# Contributor: Brian Bennett <brian.bennett@joyent.com>
 # Date: March 30, 2015
 # License: MIT
 
@@ -17,6 +18,7 @@ usage() {
 	options
 	  -c <chef_dir>         the dir to use for install chef, defaults to $chef_dir
 	  -d <cache_dir>        the dir to use for caching ruby tarballs, defaults to $cache_dir
+	  -g                    fully independent build for global zone
 	  -h                    print this message and exit
 	  -j <jobs>             number of jobs, will be passed as make -j <jobs>, defaults to $jobs
 	  -r <ruby_url>         the url of the ruby tarball to use, defaults to $ruby_url
@@ -29,10 +31,13 @@ ruby_url='http://cache.ruby-lang.org/pub/ruby/2.2/ruby-2.2.1.tar.gz'
 chef_version='12.2.1'
 chef_dir='/opt/chef'
 jobs=4
-while getopts 'c:d:hj:r:v:' option; do
+gz=false
+ruby_configure_opts=()
+while getopts 'c:d:ghj:r:v:' option; do
 	case "$option" in
 		c) chef_dir=$OPTARG;;
 		d) cache_dir=$OPTARG;;
+		g) gz=true; ruby_configure_opts+=(--without-gmp);;
 		h) usage; exit 0;;
 		j) jobs=$OPTARG;;
 		r) ruby_url=$OPTARG;;
@@ -68,6 +73,15 @@ echo "chef_version: $chef_version"
 echo "chef_dir: $chef_dir"
 echo "jobs: $jobs"
 echo "tarball: $tarball"
+echo "global_zone: $gz"
+
+# If we're building for the global zone, relocate GCC libraries to remove
+# /opt/local dependencies
+if $gz; then
+	crle -64 -u -a /opt/local/gcc47/x86_64-sun-solaris2.11/lib/amd64/libssp.so.0   -o /usr/lib/amd64/libssp.so.0 -c ./ld.config
+	crle -64 -u -a /opt/local/gcc47/x86_64-sun-solaris2.11/lib/amd64/libgcc_s.so.1 -o /usr/lib/amd64/libgcc_s.so.1 -c ./ld.config
+	export LD_CONFIG=${PWD}/ld.config
+fi
 
 # download the ruby tarball
 ruby_file=$cache_dir/${ruby_url##*/}
@@ -87,7 +101,7 @@ mkdir ruby
 tar -xzf "$ruby_file" -C ruby --strip-components=1
 cd ruby || exit 1
 
-./configure \
+./configure "${ruby_configure_opts[@]}" \
 	"--prefix=$chef_dir" \
 	--with-opt-dir=/opt/local \
 	--enable-shared \

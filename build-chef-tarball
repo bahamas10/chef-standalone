@@ -11,7 +11,7 @@
 usage() {
 	local prog=${0##*/}
 	cat <<-EOF
-	usage: $prog [-v chef_version] [-r ruby_url] [-d cache_dir] [-h] <tarball_name.tar.gz>
+	usage: $prog [-v chef_version] [-r ruby_url] [-d cache_dir] [-h] [tarball_name.tar.gz]
 
 	build a standalone chef tarball on SmartOS
 
@@ -22,18 +22,30 @@ usage() {
 	  -h                    print this message and exit
 	  -j <jobs>             number of jobs, will be passed as make -j <jobs>, defaults to $jobs
 	  -r <ruby_url>         the url of the ruby tarball to use, defaults to $ruby_url
+	  -t <tar>              tar executable name, defaults to $tar
 	  -v <chef_versio>      the chef version to install, defaults to $chef_version
 	EOF
 }
 
-cache_dir=~/.standalone-chef
+# make a path absolute against the PWD
+resolve() {
+	local path=$1
+	if [[ ${path:0:1} != '/' ]]; then
+		path=$PWD/$path
+	fi
+	echo "$path"
+}
+
+tar='tar'
+gtar --help &>/dev/null && tar='gtar'
+cache_dir=~/.chef-standalone
 ruby_url='http://cache.ruby-lang.org/pub/ruby/2.2/ruby-2.2.1.tar.gz'
 chef_version='12.2.1'
 chef_dir='/opt/chef'
 jobs=4
 gz=false
 ruby_configure_opts=()
-while getopts 'c:d:ghj:r:v:' option; do
+while getopts 'c:d:ghj:r:t:v:' option; do
 	case "$option" in
 		c) chef_dir=$OPTARG;;
 		d) cache_dir=$OPTARG;;
@@ -41,6 +53,7 @@ while getopts 'c:d:ghj:r:v:' option; do
 		h) usage; exit 0;;
 		j) jobs=$OPTARG;;
 		r) ruby_url=$OPTARG;;
+		t) tar=$OPTARG;;
 		v) chef_version=$OPTARG;;
 		*) usage >&2; exit 1;;
 	esac
@@ -49,42 +62,40 @@ shift "$((OPTIND - 1))"
 tarball=$1
 
 # bail if the user didn't supply a tarball name
-if [[ -z $tarball ]]; then
-	echo 'tarball name must be specified as first argument' >&2
-	exit 1
-fi
-
-# make the tarball absolute
-if [[ ${tarball:0:1} != '/' ]]; then
-	tarball=$PWD/$tarball
+if [[ -n $tarball ]]; then
+	tarball=$(resolve "$tarball")
+else
+	echo 'WARN: no tarball specified - tar creation will be skipped' >&2
 fi
 
 # bail if $chef_dir exists
+chef_dir=$(resolve "$chef_dir")
 if [[ -d $chef_dir ]]; then
 	echo "$chef_dir exists... cowardly refusing to run" >&2
 	exit 1
 fi
 
+cache_dir=$(resolve "$cache_dir")
 mkdir -p "$cache_dir"
+ruby_file=$cache_dir/${ruby_url##*/}
 
-echo "cache_dir: $cache_dir"
-echo "ruby_url: $ruby_url"
-echo "chef_version: $chef_version"
-echo "chef_dir: $chef_dir"
-echo "jobs: $jobs"
-echo "tarball: $tarball"
-echo "global_zone: $gz"
+# tmp workspace
+tmp=$(mktemp -d /var/tmp/ruby-standalone.XXXXXXXX)
 
-# If we're building for the global zone, relocate GCC libraries to remove
-# /opt/local dependencies
-if $gz; then
-	crle -64 -u -a /opt/local/gcc47/x86_64-sun-solaris2.11/lib/amd64/libssp.so.0   -o /usr/lib/amd64/libssp.so.0 -c ./ld.config
-	crle -64 -u -a /opt/local/gcc47/x86_64-sun-solaris2.11/lib/amd64/libgcc_s.so.1 -o /usr/lib/amd64/libgcc_s.so.1 -c ./ld.config
-	export LD_CONFIG=${PWD}/ld.config
-fi
+cat <<-EOF
+cache_dir: $cache_dir
+chef_dir: $chef_dir
+chef_version: $chef_version
+global_zone: $gz
+jobs: $jobs
+ruby_file: $ruby_file
+ruby_url: $ruby_url
+tar: $tar
+tarball: ${tarball:-<none>}
+tmp: $tmp
+EOF
 
 # download the ruby tarball
-ruby_file=$cache_dir/${ruby_url##*/}
 if [[ -f $ruby_file ]]; then
 	echo "$ruby_file exists... using cached version"
 else
@@ -92,13 +103,19 @@ else
 	curl -o "$ruby_file" "$ruby_url" || exit 1
 fi
 
-# make tmp dir to work
-tmp=$(mktemp -d /var/tmp/ruby-standalone.XXXXXXXX)
 cd "$tmp" || exit 1
+
+# If we're building for the global zone, relocate GCC libraries to remove
+# /opt/local dependencies
+if $gz; then
+	crle -64 -u -a /opt/local/gcc47/x86_64-sun-solaris2.11/lib/amd64/libssp.so.0 -o /usr/lib/amd64/libssp.so.0 -c ./ld.config
+	crle -64 -u -a /opt/local/gcc47/x86_64-sun-solaris2.11/lib/amd64/libgcc_s.so.1 -o /usr/lib/amd64/libgcc_s.so.1 -c ./ld.config
+	export LD_CONFIG=$PWD/ld.config
+fi
 
 # install ruby
 mkdir ruby
-tar -xzf "$ruby_file" -C ruby --strip-components=1
+"$tar" -xzf "$ruby_file" -C ruby --strip-components=1
 cd ruby || exit 1
 
 ./configure "${ruby_configure_opts[@]}" \
@@ -120,28 +137,34 @@ cd "$tmp" || exit 1
 "$chef_dir/bin/ruby" -v || exit 1 # sanity check
 
 # install chef
-"$chef_dir/bin/gem" install --no-ri --no-rdoc chef -v "$chef_version"
-# FAIL! now we fix ffi
-curl -o ffi.patch https://github.com/ffi/ffi/pull/399.diff || exit 1
-"$chef_dir/bin/gem" install gem-patch
-"$chef_dir/bin/gem" patch "$chef_dir"/lib/ruby/gems/*/cache/ffi-*.gem ./ffi.patch -p 1
+if ! "$chef_dir/bin/gem" install --no-ri --no-rdoc chef -v "$chef_version"; then
+	# FAIL! now we fix ffi
+	curl -L -o ffi.patch https://patch-diff.githubusercontent.com/raw/ffi/ffi/pull/399.diff || exit 1
+	"$chef_dir/bin/gem" install gem-patch
+	"$chef_dir/bin/gem" patch "$chef_dir"/lib/ruby/gems/*/cache/ffi-*.gem ./ffi.patch -p 1
 
-# retry chef install, this time it should work
-"$chef_dir/bin/gem" install --no-ri --no-rdoc chef -v "$chef_version" || exit 1
+	# retry chef install, this time it should work
+	"$chef_dir/bin/gem" install --no-ri --no-rdoc chef -v "$chef_version" || exit 1
+fi
 
-echo "finished! chef installed to $chef_dir"
-echo
-
+# print what was installed
 "$chef_dir/bin/ruby" -v
 "$chef_dir/bin/chef-solo" -v || exit 1 # sanity
+
 file "$chef_dir/bin/ruby"
 echo
-
-# tar up the result
-tar -czf "$tarball" "$chef_dir" || exit 1
+echo "finished! chef installed to $chef_dir"
+echo
 
 # remove tmp dir
 cd /tmp
 rm -rf "$tmp"
 
-echo "tarball written to $tarball"
+# tar it up
+if [[ -n $tarball ]]; then
+	# tar up the result
+	"$tar" -czf "$tarball" "$chef_dir" || exit 1
+	echo "tarball written to $tarball"
+fi
+
+true

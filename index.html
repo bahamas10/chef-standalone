@@ -207,7 +207,7 @@
 					request('./' + file.name, 'HEAD', function(err, text, xhr) {
 						var md5;
 						try {
-							md5 = a2hex(xhr.getResponseHeader('content-md5'));
+							md5 = a2hex(atob(xhr.getResponseHeader('content-md5')));
 						} catch(e) {
 							md5 = e.message;
 						}

@@ -140,6 +140,11 @@ case "$(uname)" in
 			rb_cv_have_signbit=no
 		)
 		;;
+	*)
+		ruby_configure_opts+=(
+			--disable-dtrace
+		)
+		;;
 esac
 
 ./configure "${ruby_configure_opts[@]}"

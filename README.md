@@ -26,13 +26,14 @@ Usage
 
     options
       -c <chef_dir>         the dir to use for install chef, defaults to /opt/chef
-      -d <cache_dir>        the dir to use for caching ruby tarballs, defaults to ~/.chef-standalone
+      -d <cache_dir>        the dir to use for caching ruby tarballs, defaults to /home/dave/.chef-standalone
+      -f                    wipe out /opt/chef before building
       -g                    fully independent build for global zone
       -h                    print this message and exit
       -j <jobs>             number of jobs, will be passed as make -j <jobs>, defaults to 4
-      -r <ruby_url>         the url of the ruby tarball to use, defaults to http://cache.ruby-lang.org/pub/ruby/2.2/ruby-2.2.1.tar.gz
+      -r <ruby_url>         the url of the ruby tarball to use, defaults to http://cache.ruby-lang.org/pub/ruby/2.2/ruby-2.2.2.tar.gz
       -t <tar>              tar executable name, defaults to gtar
-      -v <chef_versio>      the chef version to install, defaults to 12.2.1
+      -v <chef_versio>      the chef version to install, defaults to 12.4.1
 
 License
 -------

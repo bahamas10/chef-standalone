@@ -18,6 +18,7 @@ usage() {
 	options
 	  -c <chef_dir>         the dir to use for install chef, defaults to $chef_dir
 	  -d <cache_dir>        the dir to use for caching ruby tarballs, defaults to $cache_dir
+	  -f                    wipe out $chef_dir before building
 	  -g                    fully independent build for global zone
 	  -h                    print this message and exit
 	  -j <jobs>             number of jobs, will be passed as make -j <jobs>, defaults to $jobs
@@ -39,17 +40,19 @@ resolve() {
 tar='tar'
 gtar --help &>/dev/null && tar='gtar'
 cache_dir=~/.chef-standalone
-ruby_url='http://cache.ruby-lang.org/pub/ruby/2.2/ruby-2.2.1.tar.gz'
-chef_version='12.2.1'
 chef_dir='/opt/chef'
-jobs=4
+chef_version='12.4.1'
+force=false
 gz=false
+jobs=4
 ruby_configure_opts=()
-while getopts 'c:d:ghj:r:t:v:' option; do
+ruby_url='http://cache.ruby-lang.org/pub/ruby/2.2/ruby-2.2.2.tar.gz'
+while getopts 'c:d:fghj:r:t:v:' option; do
 	case "$option" in
 		c) chef_dir=$OPTARG;;
 		d) cache_dir=$OPTARG;;
-		g) gz=true; ruby_configure_opts+=(--without-gmp);;
+		f) force=true;;
+		g) gz=true;;
 		h) usage; exit 0;;
 		j) jobs=$OPTARG;;
 		r) ruby_url=$OPTARG;;
@@ -70,10 +73,11 @@ fi
 
 # bail if $chef_dir exists
 chef_dir=$(resolve "$chef_dir")
-if [[ -d $chef_dir ]]; then
+if ! $force && [[ -d $chef_dir ]]; then
 	echo "$chef_dir exists... cowardly refusing to run" >&2
 	exit 1
 fi
+rm -rf "$chef_dir"
 
 cache_dir=$(resolve "$cache_dir")
 mkdir -p "$cache_dir"
@@ -118,14 +122,27 @@ mkdir ruby
 "$tar" -xzf "$ruby_file" -C ruby --strip-components=1
 cd ruby || exit 1
 
-./configure "${ruby_configure_opts[@]}" \
-	"--prefix=$chef_dir" \
-	--with-opt-dir=/opt/local \
-	--enable-shared \
-	ac_cv_func_dl_iterate_phdr=no \
-	CFLAGS='-R -fPIC' \
-	rb_cv_have_signbit=no \
+# figure out options to give ./cnofigure
+# all OS
+ruby_configure_opts+=(
+	--without-gmp
 	--disable-install-doc
+	"--prefix=$chef_dir"
+)
+# specific OS
+case "$(uname)" in
+	SunOS)
+		ruby_configure_opts+=(
+			--with-opt-dir=/opt/local
+			--enable-shared
+			ac_cv_func_dl_iterate_phdr=no
+			CFLAGS='-R -fPIC'
+			rb_cv_have_signbit=no
+		)
+		;;
+esac
+
+./configure "${ruby_configure_opts[@]}"
 
 make -j "$jobs"
 mkdir "$chef_dir"
